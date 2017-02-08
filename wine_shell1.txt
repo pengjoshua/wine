@@ -1,0 +1,250 @@
+///wine is the training data with 12000+ records///;
+*///This program creates some new variables runs proc genmod to
+     find new models for poisson negative binomial zero inflated poisson 
+     zero inflated negative binomial and regression///;
+*///input files mydata.wine this is the training data///;
+*/// 		    mydata.wine_test  this is the testing data///;
+*///output file mydata.demo_wine  count for test data///;
+ 
+libname mydata '/sscc/home/m/mlo342/data/'; 
+ 
+*///Do some EDA///;
+proc contents data=mydata.wine;
+run;
+
+proc print data=mydata.wine(obs=10);
+run;
+
+proc means data=mydata.wine(drop=INDEX) nmiss mean std median max min ndec=0;
+run;
+
+*///Note mean = stdev question///;
+
+*///do some plots and correlations///;
+
+*///see if there are missing values for some of the class variables///;
+*///note 2734 zeroes for target///;
+proc freq data=mydata.wine(drop=INDEX )  ;
+   tables target labelappeal acidindex stars /   missing;
+run;
+
+*///build the dataset that you will use for training///;
+*///fix missing values define new vars etc///;
+data one;
+   set mydata.wine;
+   if residualsugar = "." then residualsugar = 5;
+   if chlorides = "." then chlorides = 0;
+   if freesulfurdioxide = "." then freesulfurdioxide = 31;
+   if totalsulfurdioxide = "." then totalsulfurdioxide = 121;
+   if ph = "."  then ph = 3;
+   if sulphates = "." then sulphates = 1;
+   if alcohol = "." then alcohol = 10;
+   if stars = "." then stars = 0; 
+run;   
+   
+
+*///do some boxplots///;
+proc sgplot data=one;
+  vbox  alcohol  /group=target;
+  xaxis label="Wine Sales";
+  keylegend / title="BoxPlot";
+run;
+
+   *///Warning... Wedding created this dataset.  He added some noise to the data and some “bad data” 
+   for you to deal with.  He wanted to give you a dose of the real world and give you
+   some bad data and little documentation. You decide what to do 
+   with the data. Recommend treating the negative values as “missing” 
+   or maybe do a little EDA. Maybe the “negative” is just a sign error. Maybe not. 
+   You decide.;
+ 
+data two;
+   set mydata.wine;
+   fixedacidity1=abs(fixedacidity);
+   volatileacidity1=abs(volatileacidity);
+   citricacid1=abs(citricacid);
+   alcohol1=abs(alcohol);
+run;
+proc means data=two(drop=INDEX) nmiss mean median max min ndec=0;
+run;
+*///so after more eda I might do something like this///;
+data three;
+   set mydata.wine;
+   if residualsugar = "." then residualsugar = 5;
+   if chlorides = "." then chlorides = 0;
+   if freesulfurdioxide = "." then freesulfurdioxide = 31;
+   if totalsulfurdioxide = "." then totalsulfurdioxide = 121;
+   if ph = "."  then ph = 3;
+   if sulphates = "." then sulphates = 1;
+   if alcohol = "." then alcohol = 10;
+   if stars = "." then stars = 0;
+   fixedacidity1=abs(fixedacidity);
+   volatileacidity1=abs(volatileacidity);
+   citricacid1=abs(citricacid);
+   alcohol1=abs(alcohol);
+   if alcohol1= "." then alcohol1 = 11;
+run;       
+   
+
+*///build the dataset that you will use for testing///;
+*///fix missing values define new vars etc///;
+data testdata;
+   set mydata.wine_test;
+   if residualsugar = "." then residualsugar = 5;
+   if chlorides = "." then chlorides = 0;
+   if freesulfurdioxide = "." then freesulfurdioxide = 31;
+   if totalsulfurdioxide = "." then totalsulfurdioxide = 121;
+   if ph = "."  then ph = 3;
+   if sulphates = "." then sulphates = 1;
+   if alcohol = "." then alcohol = 10;
+   if stars = "." then stars = 0;
+   fixedacidity1=abs(fixedacidity);
+   volatileacidity1=abs(volatileacidity);
+   citricacid1=abs(citricacid);
+   alcohol1=abs(alcohol);
+   if alcohol1= "." then alcohol1 = 11;
+run;
+  
+*///run a model using several choices for variables etc///;
+*/note this code creates the output dataset poimodel  
+ it will contain the parameters for the model and can be used to score the test file
+  see http://support.sas.com/kb/33/307.html for more info
+  sorry there is no selection = in genmod see http://support.sas.com/kb/24/562.html///;
+proc genmod data=three  ;
+   class labelappeal acidindex stars ;
+   model target=  residualsugar chlorides
+     freesulfurdioxide totalsulfurdioxide density ph sulphates   labelappeal
+     acidindex stars fixedacidity1 volatileacidity1 citricacid1 alcohol1 
+       / dist=poisson link=log  ;
+   store out=poimodel    ;
+run;
+
+*///use sas code to score the model you may wish to write a sas data step to score the model///;
+*///it is OK to copy and paste the SAS output showing the model parameters and bypass 
+the data step just make sure you explain the model and parameters///;
+
+proc plm source=poimodel;
+        score data=testdata out=demo_wine pred=p_target_poi/ ilink;
+run;
+
+*///create the file in a saved library for your results///;
+data mydata.demo_wine_poi;
+   set demo_wine;
+   keep index p_target_poi;
+run;
+*///if you would like to have all of your models scored save them in a single merged file
+   as p_target_poi
+   p_target_nb p_target_zip p_target_zinb and p_target_reg///;   
+   
+ 
+*///take a look at the file///;
+proc print;
+run;
+
+*///next for negative binomial model///;
+proc genmod data=three  ;
+   class labelappeal acidindex stars ;
+   model target=  residualsugar chlorides
+     freesulfurdioxide totalsulfurdioxide density ph sulphates   labelappeal
+     acidindex stars fixedacidity1 volatileacidity1 citricacid1 alcohol1 
+       / dist=nb link=log  ;
+   store out=nbmodel    ;
+run;
+proc plm source=nbmodel;
+        score data=testdata out=demo_wine pred=p_target_nb   / ilink;
+run;
+
+*///create the file in a saved library for your results///;
+data mydata.demo_wine_nb;
+   set demo_wine;
+   keep index p_target_nb;
+run;
+proc print;
+run; 
+    
+*///next for zip model///;
+*///Note the code zeromodel labelappeal   /link=logit and the link = log model
+   will they be scored properly with proc plm or is it just scoring the log model
+   for 10 bonus points write a data step to check this and see if it works///;
+proc genmod data=three  ;
+   class labelappeal   ;
+   model target= alcohol1 
+       /   dist=zip link=log  ;
+    zeromodel labelappeal   /link=logit;    
+   store out=zipmodel    ;
+run;
+
+proc plm source=zipmodel;
+        score data=three out=trng_demo_wine pred=p_target_zip pzero=P_ZERO_ZIP/ ilink;
+run;
+
+data trng;
+   set trng_demo_wine;
+   proc sort  ;
+   by p_zero_zip  ;
+   run;
+   
+proc freq data=trng   ;
+   tables p_zero_zip    ;
+run;
+*///select a value for p_zero_zip so that if greater than p_zero_zip then p_target_zip=0///;
+*///for this example I found .197 was fairly close///; 
+
+ 
+proc plm source=zipmodel;
+        score data=testdata out=demo_wine pred=p_target_zip pzero=P_ZERO_ZIP/ ilink;
+run;
+ 
+
+*///create the file in a saved library for your results///;
+data mydata.demo_wine_zip_zero;
+   set demo_wine;
+   if p_zero_zip>.197 then p_target_zip = 0;
+   p_target_zip=round(p_target_zip);
+   keep index p_target_zip p_zero_zip;
+run;
+proc print data=mydata.demo_wine_zip_zero(obs=10);
+run;
+
+proc freq data=mydata.demo_wine_zip_zero;
+   tables p_target_zip;
+   run;
+
+*///next for zinb model///;
+proc genmod data=three  ;
+   class labelappeal   ;
+   model target=    alcohol1 
+       /   dist=zinb link=log  ;
+       zeromodel labelappeal   /link=logit;
+   store out=zinbmodel    ;
+run;
+proc plm source=zinbmodel;
+        score data=testdata out=demo_wine pred=p_target_zinb pzero=p_zero_/ ilink;
+run;
+
+*///create the file in a saved library for your results///;
+data mydata.demo_wine_zinb;
+   set demo_wine;
+   keep index p_target_zinb;
+run;
+proc print;
+run;
+
+*///regression model is left for you to do the next dataset is for demo///;
+data mydata.demo_wine_reg;
+   set testdata;
+   p_target_reg=3;
+run;  
+*///merge all of the model results together///;
+data demo_wine_all;
+merge mydata.demo_wine_poi(in=ina) mydata.demo_wine_nb(in=inb) 
+   mydata.demo_wine_zip mydata.demo_wine_zinb mydata.demo_wine_reg;
+by INDEX;
+if ina;
+run;
+*///final datastep to retain index and model results///;
+data mydata.demo_wine_all;
+   set demo_wine_all;
+   keep index p_target_poi p_target_nb p_target_zip p_target_zinb p_target_reg;
+run;
+proc print;
+run;   
